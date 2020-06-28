@@ -1,0 +1,13 @@
+target/
+_minted-article
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+_minted-wp/
+*.fls
+*.log
+*.run.xml
+*.aux
+*.pyg
+*.out

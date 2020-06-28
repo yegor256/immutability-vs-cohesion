@@ -1,0 +1,537 @@
+\documentclass[sigconf,10pt,nonacm=true]{acmart}
+\title{The Impact of Object Immutability on Some Class Cohesion Metrics}
+
+\author{Yegor Bugayenko}
+\affiliation{\institution{Huawei Technologies Co., Ltd.}}
+\email{yegor.bugayenko@huawei.com}
+\author{Sergey Zykov}
+\affiliation{\institution{Higher School of Economics}}
+\email{szykov@hse.ru}
+
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\usepackage{verbatimbox}
+\usepackage{interval}
+% \usepackage{hyperref}
+\usepackage{minted}
+  \setminted{fontsize=\footnotesize}
+  \setminted{breaklines}
+  \usemintedstyle{bw}
+\newcommand{\code}[1]{\texttt{#1}}
+\newenvironment{nicetable}
+  {\setlength{\parindent}{0em}\medskip\small}
+  {\medskip}
+\begin{document}
+
+\begin{abstract}
+Class cohesion is a degree that demonstrates how tightly class
+inner elements, like methods and attributes, are bound or related
+to one another. Higher cohesion is a trait of good design that
+leads to better maintainability.
+An immutable object is an object whose state cannot
+be modified after it is created.
+The goal of this research was to analyze whether immutable objects
+are more cohesive and, because of that, more maintainable.
+\end{abstract}
+
+\maketitle
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Introduction}
+
+Class cohesion, defined by~\citet{yourdon78}
+as a degree of how tightly bound or related its internal
+elements are to one another,
+is considered by~\citet{kabaili01} to be one of the most
+important object-oriented software attributes.
+A class with low cohesion has disparate and non-related members;
+cohesion can be used to identify the poorly designed
+classes~\citep{badri08,basili96,chowdhury11}.
+
+An immutable object, as defined by~\citet{goetz05}, is
+an object whose state cannot be modified after it is created. Immutable
+objects have a number of well-known advantages. First, according to~\citet{bloch06},
+they are thread-safe by definition, which means that they can be safely shared between
+concurrent threads without any fear of collisions. Second,
+according to~\citet{hakonen99}, their usage
+is side-effect free, which means that they can be passed to other methods
+and functions with full confidence that they will remain intact, no matter
+what will happen there. Third, according
+to~\citet{nayebi17}, the ``identity mutability'' problem disappears
+when objects are immutable, which surfaces when the object's identity is a
+derivative of its state. According to~\citet[pp.74--93]{eo1} and~\citet{nayebi17},
+there are many other advantages.
+
+This is a perfect example of a mutable Java class:
+
+\begin{minted}{text}
+class Book {
+  private int id;
+  int setId(int i) {
+    this.id = i;
+  }
+}
+\end{minted}
+
+An object of this class is capable of modifying its state \code{id} after creation:
+
+\begin{minted}{text}
+Book book = new Book();
+// Here the state is NULL
+book.setId(123);
+// Here the state equals to 123
+\end{minted}
+
+To the contrary, the following class is immutable since
+its state \code{id} can't be modified
+after being encapsulated through the constructor, anyhow:
+
+\begin{minted}{text}
+class Book {
+  private final int id;
+  Book(int i) {
+    this.id = i;
+  }
+}
+\end{minted}
+
+According to~\citet{li93}, ``it seems logical that the more cohesive a class is,
+the easier the class is to maintain.''
+Highly cohesive classes, according to the very definition of cohesiveness,
+are more maintainable because their design is more focused and easier to understand.
+In their research, \citet{dallal13} demonstrated that
+``classes with higher cohesion values are more maintainable
+than those with lower cohesion values.''
+Better maintainability is an obvious objective of any software development.
+Thus, high cohesiveness is what classes in object-oriented programming must aim for.
+
+The question is whether making classes immutable helps them become more
+cohesive. An empirical analysis of a large group of classes from open
+source Java artifacts was performed to find an answer to this question.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Related Work}
+
+Cohesion itself, as an indicator of object-oriented design, was introduced
+by~\citet{yourdon78} in 1978 without specifying the exact algorithm of
+calculating the metric. Since then, many different algorithms
+have been suggested~\citet{izadkhah17}.
+Each of them pays attention to certain
+parameter of a class or a combination of them, such as the number of methods,
+attributes, method arguments, attributes usage frequencies, and so on.
+Some studies on existing object-oriented cohesion metrics
+even found inconsistencies among some of them~\citep{salem2011,gupta1997}.
+
+Even though high cohesion is known as a virtue of object-oriented design~\citep{kabaili01},
+very little work was done to find out what design principles affect
+the cohesion. The study of~\citet{patidar2013} concluded that implementation
+inheritance negatively affects class cohesion. The research of~\citet{guyomarc2005}
+attempted to identify how the usage of AOP aspects affects cohesion.
+Recently published research by~\citet{yb-ctors} discovered the relationship
+between cohesion and object constructors and suggested that their presence
+in cohesion calculating formulas makes a significant impact on the metric.
+The research of~\citet{yb-size} demonstrated the relevance betwee class size
+and immutability.
+
+So far, to our knowledge, no research has been attempted
+to demonstrate the relationship between object immutability and class cohesion.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Five Cohesion Metrics}
+
+According to a summary published by~\citet{izadkhah17},
+there are over thirty different metrics to measure
+class cohesion. A few of them were selected
+for the experiment:
+
+The Normalized Hamming Distance (\textbf{NHD}) class cohesion metric,
+introduced by~\citet{counsell06},
+measures the similarity in all methods of a class in terms of
+the types of their arguments. Let $l$ be the number of
+distinct parameter types, $k$ be the number of methods,
+and $c_j$ be the number of methods that have a parameter of type $j$,
+then,
+
+\begin{equation}
+\mathit{NHD} = 1 - \frac{2}{lk(k-1)} \sum_{j=1}^{l} c_j(k-c_j).
+\end{equation}
+
+The Sensitive Class Cohesion Metric (\textbf{SCOM}),
+introduced by~\citet{fernandez06}, is a
+ratio of the summation of connection intensities $C_{i,j}$ of
+all pairs $(i,j)$ of $m$ methods to the total number of pairs of methods.
+Connection intensity must be given more weight $\alpha_{i,j}$ when such a
+pair involves more attributes:
+
+\begin{equation}
+\mathit{SCOM} = \frac{2}{m(m-1)} \sum_{i=1}^{m-1} \sum_{j=i+1}^{m} C_{i,j} \times \alpha_{i,j}
+\end{equation}
+
+The Method-Method through Attributes Cohesion (\textbf{MMAC}) metric,
+introduced by~\citet{dallal07}, is
+the average cohesion of all pairs of methods.
+Let $k$ be the number of methods, $l$ be the number of distinct parameter types,
+and $x_i$ be the number of methods that use type $i$, then,
+
+\begin{equation}
+\mathit{MMAC} = \frac{1}{lk(k-1)} \displaystyle\sum_{i=1}^{l} x_i (x_i - 1).
+\end{equation}
+
+The Cohesion Among Methods in Class (\textbf{CAMC}), introduced by~\citet{bansiya99},
+measures the extent of intersections of individual method parameter
+type lists with the parameter type list of all methods in the class.
+Let $l$ be the number of distinct parameter types, $k$ be the number
+of methods and $p_i$ be the number of distinct parameter
+types used by the method $i$, then,
+
+\begin{equation}
+\mathit{CAMC} = \frac{1}{lk} \sum_{i=1}^{k} p_i.
+\end{equation}
+
+The Lack of Cohesion of Methods (\textbf{LCOM}) is
+a correlation between the methods and the local instance variables of a class
+(we use the version suggested by~\citet{henderson96}, also known as LCOM5).
+Let $m$ be the number of methods, $a$ be the number of
+attributes and $\mu_j$ be the amount of methods, which use attribute $j$, then,
+
+\begin{equation}
+\mathit{LCOM} = \frac{1}{1 - m} \left( \dfrac{1}{a} \displaystyle\sum_{j=1}^{a} \mu_j \right) - m.
+\end{equation}
+
+For all metrics, except LCOM, greater values mean higher cohesion. The LCOM
+metric is reversed and demonstrates smaller values for higher cohesion.
+To make the discussion easier, we use the inverted version of this metric,
+which is:
+
+\begin{equation}
+\mathit{LCOM} = 1 - \mathit{LCOM}.
+\end{equation}
+
+The values of all metrics are in the $\interval{0}{1}$ interval.
+
+Even though it would be beneficial for this experiment to use all or most
+of the available metrics, this is not technically feasible for a number
+of reasons. First, the implementation of each metric takes a certain amount of time to understand
+the formula, implement the algorithm in Java, and make sure it works as intended.
+Second, some metrics were suggested by their authors without thorough testing
+with all possible Java code samples. In other words, they work in theory
+but can't be implemented ``as is'' in practice, while adapting their
+algorithms to the reality of Java code may break their integrity and compromise the
+original idea of their authors. The metrics used in this research are implemented
+exactly as they were suggested by their authors, and they work correctly with
+all available Java classes.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Research Method and Results}
+
+The most popular place for publishing open-source Java artifacts
+is the Maven Central Repository~\citep{miller10}.
+There were 35211 artifacts found,%
+\footnote{\url{https://github.com/yegor256/scrape-maven-central}}
+which released at least one version in 2017.
+Even though such a large data set constitutes a perfect analysis corpus,
+it was decided to only use a subset of the entire Maven Central.
+The main reason behind this decision was the amount of time
+and computing resources required for the analysis of a single
+Java artifact: 100-500 seconds (more than 100 days for the entire Maven Central).
+
+Artifacts with less than one hundred or more than two thousand
+\code{.class} files were filtered out.
+926 artifacts remained on the list.
+This size-based selection criterion was selected due to the following
+assumptions: 1) artifacts with fewer classes may represent
+abnormally better design due to the attention their developers
+were able to pay to each class, 2) artifacts with a lot
+of classes may represent the opposite situation, where developers
+didn't have enough time to pay attention to the quality of design.
+To exclude these abnormalities, it was decided to exclude too big
+and too small artifacts and analyze only mid-sized ones.
+
+Cohesion metrics were implemented in the scope of
+an open-source Java command line utility and a web system.
+It parses Java bytecode \code{.class} files via Javassist~\citep{chiba98},
+analyzes its internals with the help of ASM~\citep{bruneton02},
+and then creates an XML representation of the entire artifact,
+where each class is presented by an XML element.
+
+Interfaces, annotations, enums, anonymous classes,
+and classes generated by AspectJ aspect-oriented
+framework were filtered out because none of them represent
+actual objects in terms of object-oriented design. They are either
+auto-generated or surrogates (like enums).
+
+For example, take a simple Java class:
+
+\begin{minted}{text}
+class Book {
+  private int id;
+  int getId() {
+    return this.id;
+  }
+}
+\end{minted}
+
+It would be represented in the output XML file as such:
+
+\begin{minted}{text}
+<class id='Book'>
+  <attributes>
+   <attribute public='false' static='false' type='I'>id</attribute>
+  </attributes>
+  <methods>
+    <method abstract='false' ctor='false' desc='()I' name='getId' public='true' static='false'>
+      <return>I</return>
+      <args/>
+    </method>
+  </methods>
+</class>
+\end{minted}
+
+Next, metric-specific XSL transformations~\citep{kay00} were applied to the XML file
+in each artifact to generate measurements for each metric.
+For example, MMAC metric produced this XML file in
+the \code{org.mockito:mockito-all} artifact:
+
+\begin{minted}{text}
+<metric>
+  <title>MMAC</title>
+  <app>
+    <class id='InstantiatorProvider' value='1'/>
+    <class id='InstantationException' value='0'/>
+    <class id='AnswersValidator' value='0.0583'/>
+    <class id='ClassNode' value='0.25'/>
+    [... skipped ...]
+  </app>
+</metric>
+\end{minted}
+
+Here, \code{AnswersValidator} and \code{ClassNode} are class names,
+while \code{0.0583} and \code{0.25} are their corresponding values of
+the MMAC formula.
+
+Next, the minimum and the maximum of all \code{value}s in each XML file were found.
+For example, in \code{MMAC.xml}, they were 0 and 1 respectively for the Mockito
+artifact mentioned above. Then, all classes that
+demonstrated values equal to either the minimum or maximum were filtered out. This was done
+to minimize the influence of trivial classes that most of the Java artifacts
+contain. For example, most metrics would consider this class to be highly cohesive
+or even ``perfect,'' despite its lack of usefulness:
+
+\begin{minted}{text}
+class Book {
+  // The body of the class is empty,
+  // no attributes, no methods.
+}
+\end{minted}
+
+Since most Java artifacts contain classes of a similar kind, it was considered
+reasonable to filter out the highest and lowest values to reduce noise. It was
+observed that some libraries have many classes with maximum or minimum metric
+values. The investigation of more than a hundred of them showed that
+all of them are either 1) empty classes with no methods and no attributes,
+or 2) utility classes with a large number of static methods and no attributes.
+
+Then, cohesiveness $C_i$ was calculated for each class $i$ in each
+artifact as an average of all five metric values.
+
+Then, the size $S_i$ of each class $i$ was calculated as a summary of the
+number of methods in the class and the number of attributes. This is
+a very rough and primitive metric, but it was required only to help visualize
+the entire set of classes on a graph.
+
+Then, all 49,854 classes found were classified into two groups: mutable and immutable.
+A class was considered mutable if it had at least one non-final attribute.
+This definition of immutability is very far from being strict, but for
+this experiment, it was considered to be sufficient enough.
+
+The visual presentation of 40704 mutable classes is in Figure~\ref{fig:1}.
+
+\begin{figure}[h]
+  \input{graph-mutable.tex}
+  \caption{Mutable classes}
+  \label{fig:1}
+\end{figure}
+
+The visual presentation of 9150 immutable classes is in Figure~\ref{fig:2}.
+
+\begin{figure}[h]
+  \input{graph-immutable.tex}
+  \caption{Immutable classes}
+  \label{fig:2}
+\end{figure}
+
+It is visually obvious that immutable classes are smaller and more cohesive.
+The average cohesiveness of mutable classes is 0.31, while immutable
+ones demonstrate a slightly bigger number of 0.34. The average size
+of mutable classes is 67, while immutable ones have an average
+size of 41. As was mentioned above, this size metric won't make much
+sense for a single class or a small group of them, but on a bigger
+scale when dealing with thousands of classes, it does make sense. The
+numbers confirm the initial assumption that immutable classes are smaller
+and more cohesive, which is an obvious virtue for any object-oriented
+software. Higher cohesiveness and smaller size lead to higher maintainability
+of software modules, lowering the amount of time and effort a programmer
+must invest in them when modifications are required.
+
+It was observed that the cohesiveness of all classes rarely dropped below
+0.2. It was expected that they would start from zero and go up to 1
+in a more or less normal distribution. However, the probability $p_i$ of
+a cohesiveness $C_i$ was distributed as Figure~\ref{fig:3} demonstrates.
+It's difficult to say why 0.2 became a lower threshold for all five
+metrics being used in the analysis. This may be a good subject for further
+analysis.
+
+\begin{figure}[h]
+  \input{graph-distribution.tex}
+  \caption{Distribution of cohesion probabilities}
+  \label{fig:3}
+\end{figure}
+
+It is also visually obvious that the larger the class, the lower
+its cohesion. Even though it was intuitively understandable, the empirical
+analysis of a large number of Java classes proved that the size of a class
+negatively affects its cohesion and maintainability. It seems to be a more
+complex task to keep a class highly cohesive when its size grows.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Discussion}
+
+Here is a practical comparison example of two Java libraries for sending emails.
+The first one is \code{commons-email} (version 1.5) by Apache
+with a large mutable class \code{SimpleEmail} at the core.%
+\footnote{\url{http://commons.apache.org/proper/commons-email/}}
+The second one is \code{jcabi-email} (version 1.10) with a set of immutable classes.%
+\footnote{\url{http://www.jcabi.com}}
+
+Here is how Java source code may look if it sends an email using \code{commons-email}:
+
+\begin{minted}{text}
+Email email = new SimpleEmail();
+email.setHostName("smtp.googlemail.com");
+email.setSmtpPort(465);
+email.setAuthenticator(new DefaultAuthenticator("user", "pwd"));
+email.setFrom("yegor256@gmail.com", "Yegor Bugayenko");
+email.addTo("friend@jcabi.com");
+email.setSubject("How are you?");
+email.setMsg("Hi, how are you?");
+email.send();
+\end{minted}
+
+Here is how the same email sending scenario would be
+implemented with \code{jcabi-email}:
+
+\begin{minted}{text}
+Postman postman = new Postman.Default(
+  new SMTP("smtp.googlemail.com", 465, "user", "pwd")
+);
+Envelope envelope = new Envelope.MIME(
+  new Array<Stamp>(
+    new StSender("Yegor Bugayenko <yegor256@gmail.com>"),
+    new StRecipient("friend@jcabi.com"),
+    new StSubject("How are you?")
+  ),
+  new Array<Enclosure>(
+    new EnPlain("Hi, how are you?")
+  )
+);
+postman.send(envelope);
+\end{minted}
+
+In the first example, it is a monster \code{SimpleEmail} class that can do many things, including
+sending MIME messages via SMTP, creating the message, configuring
+its parameters, adding MIME parts to it, and so on. There are 33 private properties, over
+a hundred methods, and about two thousand lines of code.
+
+In the second example, there are seven objects instantiated via seven \code{new} calls.
+\code{Postman} is responsible for packaging a MIME message; \code{SMTP} is
+responsible for sending it via SMTP; stamps (\code{StSender}, \code{StRecipient},
+and \code{StSubject}) are responsible for configuring the MIME message before
+delivery; and enclosure \code{EnPlain} is responsible for creating a MIME part
+for the message, which is going to be sent. These seven objects are constructed,
+encapsulated one into another, and then the postman is asked to \code{send()}
+the envelope over the wire.
+
+From a user perspective, there is almost nothing wrong. \code{SimpleEmail} is a powerful
+class with multiple controls; just hit the right one and the job
+gets done. However, from a developer perspective, the \code{SimpleEmail} class is
+very difficult to maintain, mostly because the class is very big.
+Multiple getters and setters, which are the control points of the class, modify
+object attributes, configuring its behavior. When new functionality is
+required, a developer has to add new attributes to the class and a new
+pair of setters and getters. Of course, such a modification decreases the
+cohesion of the class since there is very little or no interconnection
+between newly added attributes and previously existing ones. Every new method
+added to such a big class turns into an isolated island of functionality
+with its own set of attributes.
+
+Cohesion metrics are designed to spot such isolated parts inside classes and
+raise red flags. A class can't be cohesive it if consists of a few logical
+blocks without a strong interconnection between them.
+
+The immutability of a class makes it difficult to make a class larger
+without spending a substantial amount of effort on refactoring.
+If the \code{SimpleEmail} class was immutable
+in the beginning, it wouldn't be possible to add so many methods into it
+and encapsulate so many properties because an immutable object only accepts a state
+through its constructors. It's difficult to imagine a 33-argument constructor.
+When a class is immutable from the start, its developers are forced
+to keep it cohesive and small because they can't encapsulate
+too much or modify what's encapsulated. Just two or three
+arguments of a constructor and the reasonable limit is reached; everything
+on top of that will look strange and clumsy.
+
+The immutable design of \code{jcabi-email} implements the exact same
+email sending functionality, but employs seven classes for that, instead
+of one. Of course, the cohesiveness of each of them is much higher than
+the one of \code{SimpleEmail}. The length of each of them is below 300
+lines of code, which by itself is a perfect indicator of high readability
+and maintainability.
+
+Moreover, to extend the functionality of the library, existing classes
+don't need to be modified. Each new feature must be added through
+the creation of new classes and implementing existing interfaces.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Conclusion}
+
+It was demonstrated by the empirical analysis of almost a thousand
+Java open source libraries and 40 thousand Java classes
+that immutable classes are smaller and more cohesive, which
+makes them more maintainable. Hence, it is advised to make classes
+immutable to increase the overall quality of the software.
+
+Many thanks to the contributors who
+helped design and implement jPeek open-source Java software, including,
+but not limited to (in alphabetic order):
+Mihai Andronache,
+George Aristy,
+Sergey Kapralov,
+Sergey Karazhenets,
+Paulo Lobo,
+Vladimir Motsak,
+Alonso A. Ortega,
+Rok Pov\v{s}i\v{c},
+Vseslav Sekorin,
+and
+Mehmet Yildirim.
+
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{main}
+
+\end{document}
