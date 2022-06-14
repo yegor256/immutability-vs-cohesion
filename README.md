@@ -1,4 +1,2 @@
-The result of this research is going
-to be published in
-[International Journal of Innovation, Management and Technology](http://www.ijimt.org/).
+This paper was published in the 13th International Conference on Computer Science and Information Technology (ICCSIT), Amsterdam, The Netherlands, October 2020.
 
